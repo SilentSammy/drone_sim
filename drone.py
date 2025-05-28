@@ -10,6 +10,17 @@ class Drone:
         self.transl_mag = 0.1
         self.thr_mag = 0.15
         self.yaw_mag = math.radians(15)
+        self._cam_idx = 0
+        self.K = None
+        self.D = None
+
+    @property
+    def cam_idx(self):
+        return self._cam_idx
+    @cam_idx.setter
+    def cam_idx(self, value):
+        self._cam_idx = value
+        self._change_camera(value)
 
     def send_rc(self, x, y, z, w):
         if (x == self.prev_x and y == self.prev_y and z == self.prev_z and w == self.prev_w):
@@ -38,7 +49,7 @@ class Drone:
         raise NotImplementedError("get_frame must be implemented by subclasses")
 
     # OPTIONAL METHODS
-    def change_camera(self, cam_idx):
+    def _change_camera(self, cam_idx):
         print(f"Changing camera to {cam_idx}...")
 
     def takeoff(self):

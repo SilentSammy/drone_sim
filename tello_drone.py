@@ -44,7 +44,7 @@ class TelloDrone(Drone):
         )
     
     # OPTIONAL METHODS
-    def change_camera(self, cam_idx):
+    def _change_camera(self, cam_idx):
         if cam_idx % 2 == 0:
             self.tello.set_video_direction(Tello.CAMERA_FORWARD)
         else:

@@ -35,18 +35,23 @@ def manual_control():
 def flip_control():
     return 'f' if rising_edge('i', 'DPAD_UP') else 'b' if rising_edge('k', 'DPAD_DOWN') else 'l' if rising_edge('j', 'DPAD_LEFT') else 'r' if rising_edge('l', 'DPAD_RIGHT') else None
 
+def process_frame(frame, drawing_frame=None):
+    import vision as v
+    v.find_arucos(frame, drawing_frame=drawing_frame)
+
+# Client setup
 drone = SimDrone()                      # Using simulation drone
-# drone = TelloDrone("192.168.137.37")  # Using laptop's hotspot
 # drone = TelloDrone()                  # Using drone's hotspot
+# drone = TelloDrone("192.168.137.37")  # Using laptop's hotspot
+
 try:
     sim.startSimulation()
-    cam_idx = 0
     while sim.getSimulationState() != sim.simulation_stopped:
         # Get camera image
         if rising_edge('c'):
-            cam_idx = cam_idx + 1
-            drone.change_camera(cam_idx)
+            drone.cam_idx += 1
         frame = drone.get_frame()
+        drawing_frame = frame.copy()
 
         # Optional screenshot or recording
         if rising_edge('p'):
@@ -60,6 +65,9 @@ try:
             else:
                 drone.land()
 
+        # Process the frame (e.g., for object detection)
+        process_frame(frame, drawing_frame=drawing_frame)
+
         # Get user input for drone control
         x, y, z, w = 0, 0, 0, 0
         f = flip_control()
@@ -69,6 +77,6 @@ try:
             drone.flip(f)
         drone.send_rc(x, y, z, w)
 
-        show_frame(frame, 'Drone Camera')
+        show_frame(drawing_frame, 'Drone Camera', scale=0.5)
 finally:
     del drone

@@ -24,7 +24,7 @@ class SimDrone(Drone):
         # The simulated drone is always in flight mode unlike the real drone
         self.flight = True
 
-    def change_camera(self, cam_idx):
+    def _change_camera(self, cam_idx):
         if cam_idx % 2 == 0:
             self.cam = self.forw_cam
         else:
