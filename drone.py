@@ -1,8 +1,9 @@
+import numpy as np
 import math
 
 class Drone:
     def __init__(self):
-        self.flight = False
+        self.flight = True
         self.prev_x = 0
         self.prev_y = 0
         self.prev_w = 0
@@ -13,6 +14,7 @@ class Drone:
         self._cam_idx = 0
         self.K = None
         self.D = None
+        self._dummy_frame = np.zeros((480, 640, 3), dtype=np.uint8)
 
     @property
     def cam_idx(self):
@@ -43,12 +45,12 @@ class Drone:
 
     # --- ABSTRACT METHODS ---
     def _apply_rc(self, x, y, z, w):
-        raise NotImplementedError("_apply_movement must be implemented by subclasses")
+        print(f"Applying RC: x={x}, y={y}, z={z}, w={w}")
 
     def get_frame(self):
-        raise NotImplementedError("get_frame must be implemented by subclasses")
+        return self._dummy_frame
 
-    # OPTIONAL METHODS
+    # --- OPTIONAL METHODS ---
     def _change_camera(self, cam_idx):
         print(f"Changing camera to {cam_idx}...")
 

@@ -1,8 +1,10 @@
+import numpy as np
 import cv2
 import input_man as im
 import sim_tools as st
 from sim_tools import sim
 import math
+from drone import Drone
 from sim_drone import SimDrone
 from input_man import is_pressed, get_axis, rising_edge, is_toggled
 from tello_drone import TelloDrone
@@ -37,16 +39,17 @@ def flip_control():
 
 def process_frame(frame, drawing_frame=None):
     import vision as v
-    v.find_arucos(frame, drawing_frame=drawing_frame)
+    v.test(frame, drawing_frame, drone.K, drone.D)
 
 # Client setup
-drone = SimDrone()                      # Using simulation drone
+start_sim = True
+drone = SimDrone(start_sim=start_sim)   # Using simulation drone
 # drone = TelloDrone()                  # Using drone's hotspot
 # drone = TelloDrone("192.168.137.37")  # Using laptop's hotspot
+# drone = Drone()                       # Mock drone
 
 try:
-    sim.startSimulation()
-    while sim.getSimulationState() != sim.simulation_stopped:
+    while sim.getSimulationState() != sim.simulation_stopped or not start_sim or not isinstance(drone, SimDrone):
         # Get camera image
         if rising_edge('c'):
             drone.cam_idx += 1
@@ -79,4 +82,5 @@ try:
 
         show_frame(drawing_frame, 'Drone Camera', scale=0.5)
 finally:
+    # Cleanup
     del drone
