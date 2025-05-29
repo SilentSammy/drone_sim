@@ -6,47 +6,66 @@ from sim_tools import sim
 import math
 from input_man import is_pressed, get_axis, rising_edge, is_toggled
 from video import show_frame, screenshot, record
+from vision import find_arucos, estimate_marker_pose, get_camera_pose, vecs_to_matrix, matrix_to_vecs, rvec_to_euler, estimate_grid_origin_pose, Rz90, Rz180, Rz270, Rz270_local
 
 K = np.array([[444,   0, 256], [  0, 444, 256], [  0,   0,   1]], dtype=np.float32)
 D = np.zeros(5)  # [0, 0, 0, 0, 0]
 cam = sim.getObject('/visionSensor')
-cam_repr = sim.getObject('/Cone')
+drone_repr = sim.getObject('/DummyDrone')
 
-T_cv2sim = np.array([
-    [0,  1, 0, 0],   # X_cv -> Y_sim
-    [-1, 0, 0, 0],   # Y_cv -> -X_sim
-    [0,  0, 1, 0],   # Z_cv -> Z_sim
-    [0,  0, 0, 1]
-], dtype=np.float32)
+marker_world_vecs = {
+    0: ([0, 0, 0], [0, 0, 0]),                # at (0, 0, 0)
+    1: ([0, 0, 0], [0.5, 0.5, 0]),            # at (0.5, 0.5, 0)
+    2: ([0, 0, 0], [0.5, -0.5, 0]),           # at (0.5, -0.5, 0)
+    3: ([0, 0, 0], [-0.5, 0.5, 0]),           # at (-0.5, 0.5, 0)
+    4: ([0, 0, 0], [-0.5, -0.5, 0]),          # at (-0.5, -0.5, 0)
+}
+
+marker_coppelia_Ts = {
+    0: vecs_to_matrix([0, 0, -np.pi/2], [0, 0, 0]),
+    1: vecs_to_matrix([0, 0, -np.pi/2], [0.5, 0.5, 0]),
+    2: vecs_to_matrix([0, 0, -np.pi/2], [0.5, -0.5, 0]),
+    3: vecs_to_matrix([0, 0, -np.pi/2], [-0.5, 0.5, 0]),
+    4: vecs_to_matrix([0, 0, -np.pi/2], [-0.5, -0.5, 0]),
+}
+
+marker_cv2_Ts = {}
+for marker_id, T_coppelia in marker_coppelia_Ts.items():
+    marker_cv2_Ts[marker_id] = T_coppelia @ Rz90 @ Rz270_local
 
 def process_frame(frame, drawing_frame=None):
-    from vision import find_arucos, estimate_marker_pose, get_camera_pose, vecs_to_matrix, matrix_to_vecs, rvec_to_euler, matrix_to_euler_vecs
     corners, ids = find_arucos(frame, drawing_frame=drawing_frame)
 
     if ids is not None:
-        # Find the index of the lowest id
-        min_idx = np.argmin(ids.flatten())
-        marker_corners = corners[min_idx]
+        grid_poses = []
+        ref_rot = (-math.pi, 0, -math.pi/2)  # Reference rotation in radians (roll, pitch, yaw)
+        rot_thres = math.radians(30)
+        for marker_corners, marker_id in zip(corners, ids.flatten()):
+            rvec, tvec = estimate_grid_origin_pose(marker_corners, marker_id, 0.1, marker_cv2_Ts, K, D)
+            rx, ry, rz = rvec_to_euler(rvec)
 
-        # get its pose relative to the camera
-        rvec, tvec = estimate_marker_pose(marker_corners, 0.1, K, D)
+            # Check if the rotation is within the threshold
+            if abs(ry - ref_rot[1]) > rot_thres or abs(rx - ref_rot[0]) > rot_thres or abs(rz - ref_rot[2]) > rot_thres:
+                continue
+            
+            grid_poses.append((rvec, tvec, marker_id))
+        
+        if not grid_poses:
+            return
+        
+        # Sort by least pitch+yaw
+        grid_poses.sort(key=lambda x: np.linalg.norm(x[0][:2]))
+        rvec, tvec, marker_id = grid_poses[0]
 
-        # get the camera pose relative to the marker
-        cam_rvec, cam_tvec = get_camera_pose(rvec, tvec)
+        # get the camera pose relative to the grid
+        cam_rvec, (x, y, z) = get_camera_pose(rvec, tvec)
 
-        # Transform to the right-handed coordinate system properly, using matrix operations
-        T_cam_in_marker = vecs_to_matrix(cam_rvec, cam_tvec)
-        T_cam_in_sim = T_cv2sim @ T_cam_in_marker
-        # rvec, tvec = matrix_to_vecs(T_cam_in_sim)
+        # Convert Rodrigues vector to Euler angles
+        rx, ry, rz = rvec_to_euler(cam_rvec)
 
-        # Unpack matrix to Euler angles and position
-        eu_rvec, tvec = matrix_to_euler_vecs(T_cam_in_sim)
-        rx, ry, rz = eu_rvec
-        x, y, z = tvec
-
-        # Move the camera representation to the estimated position, crudely transforming the coordinates
-        st.move_object(cam_repr, x=x, y=y, z=z)
-        st.orient_object(cam_repr, alpha=ry, beta=-rx+math.pi, gamma=rz)
+        # Move the camera representation to the estimated position
+        st.move_object(drone_repr, x=x, y=y, z=z)
+        st.orient_object(drone_repr, alpha=ry, beta=-rx+math.pi, gamma=rz)
 
         # Display on the drawing frame
         if drawing_frame is not None:
