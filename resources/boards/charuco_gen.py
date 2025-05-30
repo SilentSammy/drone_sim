@@ -8,22 +8,16 @@ import os
 
 def main():
     # 1) Load your dictionary and build the board
-    aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
-    # board = cv2.aruco.GridBoard(
-    #     size=(2, 2),            # 2×2 markers
-    #     markerLength=0.04,      # marker side length in meters (for metadata)
-    #     markerSeparation=0.01,  # gap between markers in meters
-    #     dictionary=aruco_dict
-    # )
+    aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_250)
     board = cv2.aruco.CharucoBoard(
-        size=(5, 9),            # 2×2 markers
-        squareLength=0.1,      # length of the squares in meters (for metadata)
-        markerLength=0.09,      # length of the markers in meters (for metadata)
+        size=(9, 12),
+        squareLength=0.1,
+        markerLength=0.08,
         dictionary=aruco_dict
     )
 
     # 2) Draw the board into a square image (600×600 px here)
-    img_size = 600  # you can change this to scale your output
+    img_size = 1200  # you can change this to scale your output
     board_img = board.generateImage(
         (img_size, img_size),  # size of the output image
         marginSize=0          # margin around the board in pixels
