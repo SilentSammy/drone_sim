@@ -10,7 +10,7 @@ def main():
     # 1) Load your dictionary and build the board
     aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_250)
     board = cv2.aruco.CharucoBoard(
-        size=(9, 12),
+        size=(12, 12),
         squareLength=0.1,
         markerLength=0.08,
         dictionary=aruco_dict

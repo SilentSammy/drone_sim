@@ -2,107 +2,57 @@ import numpy as np
 import math
 import cv2
 
-# ARUCO MARKER STUFF
-def find_arucos(frame, drawing_frame=None):
-    # Detect markers using the new ArucoDetector API
-    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-    corners, ids, _ = detector.detectMarkers(gray)
+# POSE ESTIMATION
+def estimate_marker_pose(
+    marker_corners,
+    marker_length: float,
+    camera_matrix,
+    dist_coeffs,
+    pnp_method=cv2.SOLVEPNP_IPPE_SQUARE
+):
+    # --- 0. Validate & coerce intrinsics ---
+    K = np.asarray(camera_matrix, dtype=np.float64)
+    if K.shape != (3, 3):
+        raise ValueError(f"camera_matrix must be 3×3, got {K.shape}")
+    D = np.asarray(dist_coeffs, dtype=np.float64).flatten()
+    if D.size < 4:
+        raise ValueError(f"dist_coeffs must have ≥4 entries, got {D.size}")
 
-    if ids is not None and drawing_frame is not None:
-        cv2.aruco.drawDetectedMarkers(drawing_frame, corners, ids)
-    
-    return corners, ids
+    # --- 1. Normalize corner input to a (4,2) float32 array ---
+    pts = marker_corners
+    # Unwrap lists
+    if isinstance(pts, (list, tuple)):
+        pts = pts[0]
+    pts = np.asarray(pts, dtype=np.float32)
+    # Handle shapes like (1,4,2) or (4,1,2)
+    if pts.ndim == 3:
+        if pts.shape[0] == 1:
+            pts = pts[0]
+        elif pts.shape[1] == 1:
+            pts = pts[:, 0, :]
+    pts = pts.reshape(4, 2)
 
-def estimate_marker_pose(marker_corners, marker_length, camera_matrix, dist_coeffs):
-    """
-    Estimate a single ArUco marker pose using cv2.solvePnP.
-
-    Returns
-    -------
-    rvec : np.ndarray, shape (3,)
-        Rotation vector (marker in camera coordinates).
-    tvec : np.ndarray, shape (3,)
-        Translation vector (marker in camera coordinates).
-    """
-    # --- 1. Prepare image points: reshape to (4,2) float32 ---
-    img_pts = np.asarray(marker_corners, dtype=np.float32)
-    if img_pts.ndim == 3 and img_pts.shape[0] == 1:
-        img_pts = img_pts[0]
-    img_pts = img_pts.reshape((4, 2))
-
-    # --- 2. Define object points in marker coordinate frame (Z=0 plane) ---
-    half_len = marker_length / 2.0
-    obj_pts = np.array([
-        [-half_len,  half_len, 0.0],
-        [ half_len,  half_len, 0.0],
-        [ half_len, -half_len, 0.0],
-        [-half_len, -half_len, 0.0],
+    # --- 2. Build the 3D object points for a square marker of side=marker_length ---
+    h = marker_length / 2.0
+    objp = np.array([
+        [-h,  h, 0],
+        [ h,  h, 0],
+        [ h, -h, 0],
+        [-h, -h, 0]
     ], dtype=np.float32)
 
     # --- 3. Solve PnP ---
     success, rvec, tvec = cv2.solvePnP(
-        obj_pts,
-        img_pts,
-        camera_matrix,
-        dist_coeffs,
-        flags=cv2.SOLVEPNP_IPPE_SQUARE
+        objp,       # 3D points in marker frame
+        pts,        # 2D image corners
+        K,          # camera intrinsics
+        D,          # distortion
+        flags=pnp_method
     )
     if not success:
         raise RuntimeError("solvePnP failed to find a pose for this marker")
 
-    # Flatten vectors for convenience
-    rvec = rvec.flatten()
-    tvec = tvec.flatten()
-    return rvec, tvec
-
-def estimate_grid_pose(markers_corners, marker_ids, marker_length, marker_world_vecs, camera_matrix, dist_coeffs):
-    """
-    Estimate the camera pose in the grid/world frame using the marker with the lowest id.
-    Returns (rvec, tvec) of the camera in the grid/world frame.
-    """
-    # Convert marker_world_vecs to transformation matrices
-    marker_world_Ts = {marker_id: vecs_to_matrix(np.array(rvec, dtype=np.float32), np.array(tvec, dtype=np.float32))
-                       for marker_id, (rvec, tvec) in marker_world_vecs.items()}
-
-    # Find the marker with the lowest id among those detected
-    min_idx = np.argmin(marker_ids.flatten())
-    marker_id = int(marker_ids[min_idx][0])
-    marker_corners = markers_corners[min_idx]
-
-    # Estimate marker pose in camera frame
-    rvec, tvec = estimate_marker_pose(marker_corners, marker_length, camera_matrix, dist_coeffs)
-    T_marker_in_cam = vecs_to_matrix(rvec, tvec)
-    T_cam_in_marker = np.linalg.inv(T_marker_in_cam)
-
-    # Get the world pose of this marker
-    T_marker_in_world = marker_world_Ts[marker_id]
-
-    # Camera pose in world frame
-    T_cam_in_world = T_marker_in_world @ T_cam_in_marker
-
-    # Convert to rvec, tvec
-    cam_rvec, cam_tvec = matrix_to_vecs(T_cam_in_world)
-    return cam_rvec, cam_tvec
-
-def estimate_grid_origin_pose(marker_corners, marker_id, marker_length, marker_world_Ts, camera_matrix, dist_coeffs):
-    """
-    Estimate the pose (rvec, tvec) of the grid origin (marker 0) in the camera frame,
-    using the marker with the lowest visible id.
-    """
-
-    # Estimate marker pose in camera frame
-    rvec, tvec = estimate_marker_pose(marker_corners, marker_length, camera_matrix, dist_coeffs)
-    T_marker_in_cam = vecs_to_matrix(rvec, tvec)
-
-    # Get the world pose of this marker
-    T_marker_in_world = marker_world_Ts[marker_id]
-
-    # Compute the transform from grid (marker 0) to camera: T_grid_in_cam = T_marker_in_cam @ inv(T_marker_in_world) @ T_grid_in_world
-    T_grid_in_cam = T_marker_in_cam @ np.linalg.inv(T_marker_in_world)
-
-    # Convert to rvec, tvec
-    grid_rvec, grid_tvec = matrix_to_vecs(T_grid_in_cam)
-    return grid_rvec, grid_tvec
+    return rvec.flatten(), tvec.flatten()
 
 def get_camera_pose(rvec, tvec):
     R, _ = cv2.Rodrigues(rvec)
@@ -112,59 +62,86 @@ def get_camera_pose(rvec, tvec):
     cam_tvec = t_inv.flatten()
     return cam_rvec.flatten(), cam_tvec
 
-# MATRIX AND VECTOR STUFF
-def vecs_to_matrix(rvec, tvec):
-    """Convert rvec, tvec to a 4x4 transformation matrix."""
-    rvec = np.asarray(rvec, dtype=np.float32)
-    tvec = np.asarray(tvec, dtype=np.float32)
-    R, _ = cv2.Rodrigues(rvec)
-    T = np.eye(4)
-    T[:3, :3] = R
-    T[:3, 3] = tvec.flatten()
-    return T
-
-def matrix_to_vecs(T):
-    """Convert a 4x4 transformation matrix to rvec, tvec."""
-    R = T[:3, :3]
-    tvec = T[:3, 3]
-    rvec, _ = cv2.Rodrigues(R)
-    return rvec.flatten(), tvec.flatten()
-
-def rvec_to_euler(rvec):
-    """Convert a rotation vector to Euler angles (XYZ convention, radians)."""
-    R, _ = cv2.Rodrigues(rvec)
-    sy = math.sqrt(R[0, 0]**2 + R[1, 0]**2)
-    singular = sy < 1e-6
-    if not singular:
-        rx = math.atan2(R[2, 1], R[2, 2])
-        ry = math.atan2(-R[2, 0], sy)
-        rz = math.atan2(R[1, 0], R[0, 0])
-    else:
-        rx = math.atan2(-R[1, 2], R[1, 1])
-        ry = math.atan2(-R[2, 0], sy)
-        rz = 0.0
-    return rx, ry, rz
-
-def rotz(angle_rad):
+def get_board_pose(
+    board: cv2.aruco.CharucoBoard,
+    K: np.ndarray,
+    D: np.ndarray,
+    charuco_corners: np.ndarray,
+    charuco_ids: np.ndarray,
+    center: bool = False
+) -> tuple[np.ndarray, np.ndarray] | None:
     """
-    Create a 4x4 homogeneous rotation matrix for a rotation of angle_rad (radians) about the Z axis.
-    """
-    Rz = np.array([
-        [np.cos(angle_rad), -np.sin(angle_rad), 0],
-        [np.sin(angle_rad),  np.cos(angle_rad), 0],
-        [0, 0, 1]
-    ])
-    T = np.eye(4)
-    T[:3, :3] = Rz
-    return T
+    Estimate the Charuco‐board pose, optionally recentering the translation
+    so that the board’s center is treated as the origin instead of its top-left corner.
 
-# GLOBALS
-aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_50)
-parameters = cv2.aruco.DetectorParameters()
-detector = cv2.aruco.ArucoDetector(aruco_dict, parameters)
-Rz90 = rotz(np.pi/2)  # Precomputed rotation matrix for 90 degrees around Z-axis
-Rz180 = rotz(np.pi)    # Precomputed rotation matrix for 180 degrees around Z-axis
-Rz270 = rotz(3*np.pi/2)  # Precomputed rotation matrix for 270 degrees around Z-axis
-Rz90_local = vecs_to_matrix([0, 0, np.pi/2], [0, 0, 0])  # 90° local rotation
-Rz180_local = vecs_to_matrix([0, 0, np.pi], [0, 0, 0])  # 180° local rotation
-Rz270_local = vecs_to_matrix([0, 0, 3*np.pi/2], [0, 0, 0])  # 270° local rotation
+    Parameters
+    ----------
+    board : cv2.aruco.CharucoBoard
+        The ChArUco board object.
+    K : array-like of shape (3,3)
+        Camera intrinsic matrix.
+    D : array-like of length >= 4
+        Distortion coefficients.
+    charuco_corners : array-like, shape (N,1,2) or (N,2)
+        Detected 2D corner positions (pixels) from CharucoDetector.detectBoard().
+    charuco_ids : array-like, shape (N,1) or (N,)
+        IDs of those detected Charuco corners.
+    center : bool
+        If True, shift the translation so that the pose’s origin lies at the board’s center
+        rather than at its top-left corner.
+
+    Returns
+    -------
+    (rvec, tvec) : tuple of ndarray
+        - rvec : ndarray of shape (3,)
+            Rodrigues rotation vector (board→camera).
+        - tvec : ndarray of shape (3,)
+            Translation vector (board→camera), optionally recentered to the board’s center.
+        Returns None if insufficient corners or solvePnP fails.
+    """
+    # 1. Match 3D–2D points: each obj_pt is a (X,Y,0) in board coords
+    obj_pts, img_pts = board.matchImagePoints(charuco_corners, charuco_ids)
+    # obj_pts: (N×3), img_pts: (N×2) {{}}  # See Board.matchImagePoints docs
+
+    # 2. Need at least 6 points for the default CV_ITERATIVE solver
+    if obj_pts.shape[0] < 6:
+        return None
+
+    # 3. SolvePnP: get rotation & translation from board frame → camera frame
+    success, rvec, tvec = cv2.solvePnP(
+        obj_pts,
+        img_pts,
+        K,
+        D,
+        flags=cv2.SOLVEPNP_ITERATIVE
+    )  # For n_pts ≥ 6, ITERATIVE is recommended {{:contentReference[oaicite:7]{index=7}}}
+    if not success:
+        return None
+
+    rvec = rvec.flatten()
+    tvec = tvec.flatten()
+
+    # 4. If centering requested, compute the board’s geometric center in board coords:
+    if center:
+        # 4a. Query the number of squares in each direction
+        squaresX, squaresY = board.getChessboardSize()
+        sq_len = board.getSquareLength()
+        # The farthest interior chess‐corner sits at ((squaresX-1)*sq_len, (squaresY-1)*sq_len, 0)
+        # So center (halfway) is:
+        center_board = np.array([
+            (squaresX - 1) * sq_len / 2.0,
+            (squaresY - 1) * sq_len / 2.0,
+            0.0
+        ], dtype=np.float64)  # {{:contentReference[oaicite:8]{index=8}}}
+
+        # 4b. Convert rvec → rotation matrix R (3×3)
+        R_mat, _ = cv2.Rodrigues(rvec)  # board→camera rotation {{:contentReference[oaicite:9]{index=9}}}
+
+        # 4c. Find where that board‐center lives in camera coords:
+        #     X_center_cam = R_mat @ center_board + tvec
+        offset_cam = R_mat.dot(center_board) + tvec
+
+        # 4d. By overwriting tvec with (offset_cam), we shift origin to board‐center
+        tvec = offset_cam
+
+    return rvec, tvec

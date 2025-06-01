@@ -19,7 +19,7 @@ def main():
     # 2) Draw the board into a square image (600×600 px here)
     img_size = 600  # you can change this to scale your output
     board_img = board.generateImage(
-        (img_size, img_size),  # size of the output image
+        (img_size, int(img_size*0.75)),  # size of the output image
         marginSize=10          # margin around the board in pixels
     )
 
