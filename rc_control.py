@@ -9,6 +9,7 @@ from sim_drone import SimDrone
 from input_man import is_pressed, get_axis, rising_edge, is_toggled
 from tello_drone import TelloDrone
 from video import show_frame, screenshot, record
+from drone_est import DroneEstimator
 
 # Manual control (keyboard and controller)
 def manual_control():
@@ -37,9 +38,19 @@ def manual_control():
 def flip_control():
     return 'f' if rising_edge('i', 'DPAD_UP') else 'b' if rising_edge('k', 'DPAD_DOWN') else 'l' if rising_edge('j', 'DPAD_LEFT') else 'r' if rising_edge('l', 'DPAD_RIGHT') else None
 
-def process_frame(frame, drawing_frame=None):
-    import vision as v
-    v.test(frame, drawing_frame, drone.K, drone.D)
+def visualize_drone_pose(frame, drawing_frame=None):
+    import drone_viz
+    drone_T = de.get_drone_transform(frame, drawing_frame=drawing_frame)
+    if drone_T is None:
+        return
+    drone_viz.visualize_drone_pose(drone_T)
+
+# Pose estimation setup
+de = DroneEstimator(
+    K = np.array([[444,   0, 256], [  0, 444, 256], [  0,   0,   1]], dtype=np.float32),
+    D = np.zeros(5),  # [0, 0, 0, 0, 0]
+    board = cv2.aruco.CharucoBoard( size=(9, 12), squareLength=0.1, markerLength=0.08, dictionary=cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_250) )
+)
 
 # Client setup
 start_sim = True
@@ -47,9 +58,10 @@ drone = SimDrone(start_sim=start_sim)   # Using simulation drone
 # drone = TelloDrone()                  # Using drone's hotspot
 # drone = TelloDrone("192.168.137.37")  # Using laptop's hotspot
 # drone = Drone()                       # Mock drone
+drone.cam_idx = 1                       # Start with the dorsal camera
 
 try:
-    while sim.getSimulationState() != sim.simulation_stopped or not start_sim or not isinstance(drone, SimDrone):
+    while not isinstance(drone, SimDrone) or not start_sim or sim.getSimulationState() != sim.simulation_stopped:
         # Get camera image
         if rising_edge('c'):
             drone.cam_idx += 1
@@ -69,7 +81,7 @@ try:
                 drone.land()
 
         # Process the frame (e.g., for object detection)
-        process_frame(frame, drawing_frame=drawing_frame)
+        visualize_drone_pose(frame, drawing_frame=drawing_frame)
 
         # Get user input for drone control
         x, y, z, w = 0, 0, 0, 0
@@ -80,7 +92,7 @@ try:
             drone.flip(f)
         drone.send_rc(x, y, z, w)
 
-        show_frame(drawing_frame, 'Drone Camera', scale=0.5)
+        show_frame(drawing_frame, 'Drone Camera', scale=0.75)
 finally:
     # Cleanup
     del drone

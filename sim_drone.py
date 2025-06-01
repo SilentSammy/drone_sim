@@ -7,9 +7,15 @@ import math
 from drone import Drone
 
 class SimDrone(Drone):
-    def __init__(self, start_sim=True):
+    def __init__(
+        self,
+        start_sim=True,
+        forward_cam_path='/Quadcopter/visionSensor[0]',
+        down_cam_path='/Quadcopter/visionSensor[1]',
+        target_path='/Quadcopter/base/target'
+    ):
         super().__init__()
-        
+
         # Magnitudes for simulated drone control
         self.transl_mag = 0.1
         self.thr_mag = 0.15
@@ -17,24 +23,18 @@ class SimDrone(Drone):
 
         # Initialize camera parameters
         self.cams = [
-            (
-                sim.getObject('/Quadcopter/visionSensor[0]'),
-                np.array([[624,   0, 480], [  0, 624, 360], [  0,   0,   1]], dtype=np.float32)
-            ),
-            (
-                sim.getObject('/Quadcopter/visionSensor[1]'),
-                np.array([[444,   0, 256], [  0, 444, 256], [  0,   0,   1]], dtype=np.float32)
-            )
+            ( sim.getObject(forward_cam_path), np.array([[624,   0, 480], [  0, 624, 360], [  0,   0,   1]], dtype=np.float32) ),
+            ( sim.getObject(down_cam_path), np.array([[444,   0, 256], [  0, 444, 256], [  0,   0,   1]], dtype=np.float32) ),
         ]
         self.cam = self.cams[0][0]  # Start with the forward camera
         self.K = self.cams[0][1]  # Forward camera intrinsic matrix
         self.D = np.zeros(5)  # [0, 0, 0, 0, 0]
 
         # Start the simulation
-        self.target = sim.getObject('/target')
+        self.target = sim.getObject(target_path)
         if start_sim:
             sim.startSimulation()
-        
+
         # The simulated drone is always in flight mode unlike the real drone
         self.flight = True
 

@@ -129,8 +129,8 @@ def get_board_pose(
         # The farthest interior chess‐corner sits at ((squaresX-1)*sq_len, (squaresY-1)*sq_len, 0)
         # So center (halfway) is:
         center_board = np.array([
-            (squaresX - 1) * sq_len / 2.0,
-            (squaresY - 1) * sq_len / 2.0,
+            ((squaresX - 1) * sq_len / 2.0) + sq_len / 2.0,  # +sq_len/2 to center the board
+            (squaresY - 1) * sq_len / 2.0 + sq_len / 2.0,  # +sq_len/2 to center the board
             0.0
         ], dtype=np.float64)  # {{:contentReference[oaicite:8]{index=8}}}
 
