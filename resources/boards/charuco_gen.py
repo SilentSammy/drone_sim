@@ -8,19 +8,35 @@ import os
 
 def main():
     # 1) Load your dictionary and build the board
-    aruco_dict = cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_250)
     board = cv2.aruco.CharucoBoard(
-        size=(12, 12),
+        size=(9, 36),
         squareLength=0.1,
         markerLength=0.08,
-        dictionary=aruco_dict
+        dictionary=cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_250)
     )
 
-    # 2) Draw the board into a square image (600×600 px here)
-    img_size = 1200  # you can change this to scale your output
+    # 2) Draw the board into an image
+    img_size = 1200  # base size for the output
+
+    # Option to keep the image square or fit the board snugly
+    keep_square = False  # Set to True for square image, False for snug fit
+
+    if keep_square:
+        # Square image: both dimensions are img_size
+        out_size = (img_size, img_size)
+        margin = 0
+    else:
+        # Fit the board snugly: calculate based on board aspect ratio
+        squares_x, squares_y = board.getChessboardSize()
+        aspect_ratio = squares_y / squares_x
+        width = img_size
+        height = int(img_size * aspect_ratio)
+        out_size = (width, height)
+        margin = 0
+
     board_img = board.generateImage(
-        (img_size, img_size),  # size of the output image
-        marginSize=0          # margin around the board in pixels
+        out_size,  # size of the output image
+        marginSize=margin
     )
 
     # 3) Save alongside this script

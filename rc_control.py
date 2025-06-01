@@ -42,7 +42,7 @@ def flip_control():
 
 def visualize_drone_pose(frame, drawing_frame=None):
     import drone_viz
-    drone_T = de.get_drone_transform(frame, drawing_frame=drawing_frame)
+    drone_T = de.get_drone_transform_nb(frame, drawing_frame=drawing_frame)
     if drone_T is None:
         return
     drone_viz.visualize_drone_pose(drone_T)
@@ -81,7 +81,7 @@ def match_dummy_pose(frame, drawing_frame=None):
         return None
 
     # Get the drone's estimated position and orientation
-    drone_T = de.get_drone_transform(frame, drawing_frame=drawing_frame)
+    drone_T = de.get_drone_transform_nb(frame, drawing_frame=drawing_frame)
     dc.feed_pose(drone_T)
 
     # Get the position and orientation of the dummy object
@@ -98,7 +98,12 @@ dc = DroneController()
 de = DroneEstimator(
     K = np.array([[444,   0, 256], [  0, 444, 256], [  0,   0,   1]], dtype=np.float32),
     D = np.zeros(5),  # [0, 0, 0, 0, 0]
-    board = cv2.aruco.CharucoBoard( size=(9, 12), squareLength=0.1, markerLength=0.08, dictionary=cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_250) )
+    board = cv2.aruco.CharucoBoard(
+        size=(9, 36),
+        squareLength=0.1,
+        markerLength=0.08,
+        dictionary=cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_250)
+    )
 )
 
 # Client setup
@@ -137,7 +142,8 @@ try:
             else:
                 drone.land()
 
-        for i in range(1, len(modes)+1): # From 1 to 9
+        # Choose control mode
+        for i in range(1, len(modes)+1):
             if rising_edge(str(i)):
                 mode = i-1
                 print(f"Control mode: {modes[i-1].get('desc', str(mode))}")

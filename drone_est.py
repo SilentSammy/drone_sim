@@ -1,3 +1,4 @@
+import threading
 import numpy as np
 import cv2
 import input_man as im
@@ -22,8 +23,13 @@ class DroneEstimator:
     def __init__(self, board, K, D=None):
         self.board = board
         self.K = K
-        self.D = D if D is not None else np.zeros(5)  # Default to no distortion
+        self.D = D if D is not None else np.zeros(5)
         self.detector = cv2.aruco.CharucoDetector(board)
+
+        # For background threading
+        self._lock = threading.Lock()
+        self._thread_running = False
+        self._last_cam_T = None
     
     def fix_camera_transform(self, cam_T):
         """
@@ -104,10 +110,37 @@ class DroneEstimator:
         return cam_T
 
     def get_drone_transform(self, frame, drawing_frame=None):
-        # HOURS SPENT ON THIS FUCKING THING: Too many
-        # This is a placeholder for the drone transform logic, for now we will assume the drone is the same as the camera
         return self.get_camera_transform(frame, drawing_frame=drawing_frame)
 
+    def get_drone_transform_nb(self, frame, drawing_frame=None):
+            """
+            Return the most-recent camera transform. If a background
+            thread isn’t running, launch one to compute a new transform.
+            While that thread is running, return the last known transform.
+            """
+            with self._lock:
+                # If no thread is active, start one with the current frame
+                if not self._thread_running:
+                    self._thread_running = True
+
+                    def worker(f, d):
+                        try:
+                            new_T = self.get_drone_transform(f, drawing_frame=d)
+                            with self._lock:
+                                self._last_cam_T = new_T
+                        finally:
+                            with self._lock:
+                                self._thread_running = False
+
+                    thread = threading.Thread(
+                        target=worker, args=(frame.copy(), None if drawing_frame is None else drawing_frame.copy())
+                    )
+                    thread.daemon = True
+                    thread.start()
+
+                # Return last-known transform (might be None on first call)
+                return self._last_cam_T
+        
 def rot_x_180():
     """Returns a 4x4 matrix for a 180-degree rotation about the X axis."""
     R = np.eye(4)
