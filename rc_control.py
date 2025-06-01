@@ -1,3 +1,4 @@
+import math
 import numpy as np
 import cv2
 import input_man as im
@@ -10,6 +11,7 @@ from input_man import is_pressed, get_axis, rising_edge, is_toggled
 from tello_drone import TelloDrone
 from video import show_frame, screenshot, record
 from drone_est import DroneEstimator
+from drone_control import DroneController
 
 # Manual control (keyboard and controller)
 def manual_control():
@@ -45,7 +47,54 @@ def visualize_drone_pose(frame, drawing_frame=None):
         return
     drone_viz.visualize_drone_pose(drone_T)
 
-# Pose estimation setup
+def global_to_local(x_global: float, y_global: float, yaw: float) -> tuple[float, float]:
+    """
+    Convert a vector from the global frame to the drone’s local frame, given the drone’s yaw.
+
+    Parameters
+    ----------
+    x_global : float
+        X component in the global coordinate frame.
+    y_global : float
+        Y component in the global coordinate frame.
+    yaw : float
+        Drone’s yaw angle (radians) measured from the global X axis (positive CCW).
+
+    Returns
+    -------
+    x_local : float
+        X component in the drone’s local frame.
+    y_local : float
+        Y component in the drone’s local frame.
+    """
+    c = math.cos(yaw)
+    s = math.sin(yaw)
+
+    # Rotate the global (x, y) by –yaw to get local coordinates:
+    x_local =  c * x_global + s * y_global
+    y_local = -s * x_global + c * y_global
+    return x_local, y_local
+
+def match_dummy_pose(frame, drawing_frame=None):
+    import drone_viz
+    if drone_viz.dummy_drone is None:
+        return None
+
+    # Get the drone's estimated position and orientation
+    drone_T = de.get_drone_transform(frame, drawing_frame=drawing_frame)
+    dc.feed_pose(drone_T)
+
+    # Get the position and orientation of the dummy object
+    dummy_pos = sim.getObjectPosition(drone_viz.dummy_drone, -1)
+    dummy_x = dummy_pos[0]  # X position is the first element in the position tuple
+    dummy_y = dummy_pos[1]  # Y position is the second element in the position tuple
+    dummy_z = dummy_pos[2]  # Z position is the third element in the position tuple
+    dummy_yaw = -sim.getObjectOrientation(drone_viz.dummy_drone, -1)[2]  # Yaw is the third element in the orientation tuple
+
+    return dc.move_to( x=dummy_x, y=dummy_y, z=dummy_z, yaw=dummy_yaw )
+
+# Drone control
+dc = DroneController()
 de = DroneEstimator(
     K = np.array([[444,   0, 256], [  0, 444, 256], [  0,   0,   1]], dtype=np.float32),
     D = np.zeros(5),  # [0, 0, 0, 0, 0]
@@ -59,6 +108,14 @@ drone = SimDrone(start_sim=start_sim)   # Using simulation drone
 # drone = TelloDrone("192.168.137.37")  # Using laptop's hotspot
 # drone = Drone()                       # Mock drone
 drone.cam_idx = 1                       # Start with the dorsal camera
+
+# Control modes
+mode = 0
+modes = [
+    {'desc': 'Manual Control', 'func': None, 'image_based': False},
+    {'desc': 'Pose Estimation', 'func': lambda f, df: visualize_drone_pose(f, drawing_frame=df), 'image_based': True},
+    {'desc': 'Match Dummy Pose', 'func': lambda f, df: match_dummy_pose(f, drawing_frame=df), 'image_based': True},
+]
 
 try:
     while not isinstance(drone, SimDrone) or not start_sim or sim.getSimulationState() != sim.simulation_stopped:
@@ -80,18 +137,23 @@ try:
             else:
                 drone.land()
 
-        # Process the frame (e.g., for object detection)
-        visualize_drone_pose(frame, drawing_frame=drawing_frame)
+        for i in range(1, len(modes)+1): # From 1 to 9
+            if rising_edge(str(i)):
+                mode = i-1
+                print(f"Control mode: {modes[i-1].get('desc', str(mode))}")
+                break
 
-        # Get user input for drone control
-        x, y, z, w = 0, 0, 0, 0
-        f = flip_control()
-        if not f:
-            x, y, z, w = manual_control()
-        else:
-            drone.flip(f)
-        drone.send_rc(x, y, z, w)
+        # Get values for drone control
+        man_vels = manual_control()
+        if mode < len(modes):
+            func = modes[mode].get('func', None)
+            func_vels = None if func is None else func(frame, drawing_frame) if modes[mode].get('image_based', False) else func()
+            func_vels = np.zeros(4) if func_vels is None else func_vels
 
+        total_vels = np.add(man_vels, func_vels)
+        total_vels = np.clip(total_vels, -1.0, 1.0)
+
+        drone.send_rc(*total_vels)
         show_frame(drawing_frame, 'Drone Camera', scale=0.75)
 finally:
     # Cleanup

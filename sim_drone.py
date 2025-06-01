@@ -17,9 +17,9 @@ class SimDrone(Drone):
         super().__init__()
 
         # Magnitudes for simulated drone control
-        self.transl_mag = 0.1
-        self.thr_mag = 0.15
-        self.yaw_mag = math.radians(15)
+        self.transl_mag = 0.25
+        self.thr_mag = 0.3
+        self.yaw_mag = math.radians(30)
 
         # Initialize camera parameters
         self.cams = [

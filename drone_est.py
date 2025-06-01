@@ -22,7 +22,7 @@ class DroneEstimator:
     def __init__(self, board, K, D=None):
         self.board = board
         self.K = K
-        self.D = D or np.zeros(5)  # Default to no distortion
+        self.D = D if D is not None else np.zeros(5)  # Default to no distortion
         self.detector = cv2.aruco.CharucoDetector(board)
     
     def fix_camera_transform(self, cam_T):
