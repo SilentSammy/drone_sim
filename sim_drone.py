@@ -5,6 +5,7 @@ import sim_tools as st
 from sim_tools import sim
 import math
 from drone import Drone
+import matrix_help as mh
 
 class SimDrone(Drone):
     def __init__(
@@ -32,6 +33,7 @@ class SimDrone(Drone):
 
         # Start the simulation
         self.target = sim.getObject(target_path)
+        self.drone_handle = sim.getObjectParent(self.target)
         if start_sim:
             sim.startSimulation()
 
@@ -44,8 +46,12 @@ class SimDrone(Drone):
         print("Changing camera to", "forward" if cam_idx % 2 == 0 else "down")
 
     def _apply_rc(self, x, y, z, w):
-        st.move_object_local(self.target, x=x, y=y, z=z)
-        st.orient_object_local(self.target, gamma=w)
+        parent_handle = self.drone_handle
+        tvec = [x, y, z]
+        rvec = [0, 0, -w]
+        target_T = mh.vecs_to_matrix(rvec, tvec)
+
+        sim.setObjectMatrix(self.target, parent_handle, st.np_to_coppelia_T(target_T))
     
     def get_frame(self):
         frame = st.get_image(self.cam)

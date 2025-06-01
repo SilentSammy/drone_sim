@@ -1,3 +1,4 @@
+import time
 import math
 import numpy as np
 import cv2
@@ -46,34 +47,6 @@ def visualize_drone_pose(frame, drawing_frame=None):
     if drone_T is None:
         return
     drone_viz.visualize_drone_pose(drone_T)
-
-def global_to_local(x_global: float, y_global: float, yaw: float) -> tuple[float, float]:
-    """
-    Convert a vector from the global frame to the drone’s local frame, given the drone’s yaw.
-
-    Parameters
-    ----------
-    x_global : float
-        X component in the global coordinate frame.
-    y_global : float
-        Y component in the global coordinate frame.
-    yaw : float
-        Drone’s yaw angle (radians) measured from the global X axis (positive CCW).
-
-    Returns
-    -------
-    x_local : float
-        X component in the drone’s local frame.
-    y_local : float
-        Y component in the drone’s local frame.
-    """
-    c = math.cos(yaw)
-    s = math.sin(yaw)
-
-    # Rotate the global (x, y) by –yaw to get local coordinates:
-    x_local =  c * x_global + s * y_global
-    y_local = -s * x_global + c * y_global
-    return x_local, y_local
 
 def match_dummy_pose(frame, drawing_frame=None):
     import drone_viz
@@ -124,6 +97,7 @@ modes = [
 
 try:
     while not isinstance(drone, SimDrone) or not start_sim or sim.getSimulationState() != sim.simulation_stopped:
+        start_time = time.time()
         # Get camera image
         if rising_edge('c'):
             drone.cam_idx += 1
@@ -158,9 +132,13 @@ try:
 
         total_vels = np.add(man_vels, func_vels)
         total_vels = np.clip(total_vels, -1.0, 1.0)
-
+        
+        
         drone.send_rc(*total_vels)
+
         show_frame(drawing_frame, 'Drone Camera', scale=0.75)
+        print("execution time:", time.time() - start_time)
+
 finally:
     # Cleanup
     del drone
