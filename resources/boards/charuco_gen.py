@@ -9,14 +9,14 @@ import os
 def main():
     # 1) Load your dictionary and build the board
     board = cv2.aruco.CharucoBoard(
-        size=(9, 36),
+        size=(9, 24),
         squareLength=0.1,
         markerLength=0.08,
         dictionary=cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_250)
     )
 
     # 2) Draw the board into an image
-    img_size = 1200  # base size for the output
+    img_size = 900  # base size for the output
 
     # Option to keep the image square or fit the board snugly
     keep_square = False  # Set to True for square image, False for snug fit

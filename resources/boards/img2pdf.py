@@ -24,7 +24,7 @@ im.save("charuco_board.pdf", "PDF", resolution=desired_dpi)
 
 # 1) Create a canvas that’s 90 cm wide and, say, 120 cm tall
 c = canvas.Canvas("gridboard.pdf",
-                  pagesize=(90*cm, 360*cm))  # width, height in points
+                  pagesize=(90*cm, 60*cm))  # width, height in points
 
 # 2) Draw your image to fill the page (from (0,0) up to (90 cm, height))
 c.drawImage("gridboard.png", 

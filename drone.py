@@ -2,7 +2,7 @@ import numpy as np
 import math
 
 class Drone:
-    def __init__(self):
+    def __init__(self, get_frame=None, K=None, D=None):
         self.flight = True
         self.prev_x = 0
         self.prev_y = 0
@@ -12,8 +12,9 @@ class Drone:
         self.thr_mag = 0.15
         self.yaw_mag = math.radians(15)
         self._cam_idx = 0
-        self.K = None
-        self.D = None
+        self.K = K
+        self.D = D
+        self._get_frame = get_frame
         self._dummy_frame = np.zeros((480, 640, 3), dtype=np.uint8)
 
     @property
@@ -48,6 +49,8 @@ class Drone:
         print(f"Applying RC: x={x}, y={y}, z={z}, w={w}")
 
     def get_frame(self):
+        if self._get_frame is not None:
+            return self._get_frame()
         return self._dummy_frame
 
     # --- OPTIONAL METHODS ---

@@ -72,7 +72,7 @@ de = DroneEstimator(
     K = np.array([[444,   0, 256], [  0, 444, 256], [  0,   0,   1]], dtype=np.float32),
     D = np.zeros(5),  # [0, 0, 0, 0, 0]
     board = cv2.aruco.CharucoBoard(
-        size=(9, 36),
+        size=(9, 24),
         squareLength=0.1,
         markerLength=0.08,
         dictionary=cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_250)
@@ -81,10 +81,20 @@ de = DroneEstimator(
 
 # Client setup
 start_sim = True
-drone = SimDrone(start_sim=start_sim)   # Using simulation drone
+# drone = SimDrone(start_sim=start_sim)   # Using simulation drone
 # drone = TelloDrone()                  # Using drone's hotspot
 # drone = TelloDrone("192.168.137.37")  # Using laptop's hotspot
-# drone = Drone()                       # Mock drone
+
+cap = cv2.VideoCapture("http://192.168.137.86:4747/video")
+drone = Drone(
+    get_frame=lambda: cv2.rotate(cap.read()[1], cv2.ROTATE_90_CLOCKWISE),
+    K = np.array([
+        [487.14566155,   0.,         321.7888109 ],
+        [  0.,         487.60075097, 239.38896134],
+        [  0.,           0.,           1.        ]
+    ], dtype=np.float32),
+    D = np.array([0.33819757, 1.36709606, -6.17042008, 8.65929659], dtype=np.float32)
+)
 drone.cam_idx = 1                       # Start with the dorsal camera
 
 # Control modes
@@ -133,12 +143,10 @@ try:
         total_vels = np.add(man_vels, func_vels)
         total_vels = np.clip(total_vels, -1.0, 1.0)
         
-        
         drone.send_rc(*total_vels)
 
         show_frame(drawing_frame, 'Drone Camera', scale=0.75)
         print("execution time:", time.time() - start_time)
-
 finally:
     # Cleanup
     del drone
