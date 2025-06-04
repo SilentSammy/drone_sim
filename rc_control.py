@@ -11,8 +11,9 @@ from sim_drone import SimDrone
 from input_man import is_pressed, get_axis, rising_edge, is_toggled
 from tello_drone import TelloDrone
 from video import show_frame, screenshot, record
-from drone_est import DroneEstimator
+from drone_est import DroneEstimator, PnpResult
 from drone_control import DroneController
+from ball_detector import BallDetector
 
 # Manual control (keyboard and controller)
 def manual_control():
@@ -43,9 +44,10 @@ def flip_control():
 
 def visualize_drone_pose(frame, drawing_frame=None):
     import drone_viz
-    drone_T = de.get_drone_transform_nb(frame, drawing_frame=drawing_frame)
-    if drone_T is None:
+    res = de.get_drone_transform_nb(frame, drawing_frame=drawing_frame)
+    if res is None:
         return
+    drone_T, _ = res
     drone_viz.visualize_drone_pose(drone_T)
 
 def match_dummy_pose(frame, drawing_frame=None):
@@ -66,6 +68,22 @@ def match_dummy_pose(frame, drawing_frame=None):
 
     return dc.move_to( x=dummy_x, y=dummy_y, z=dummy_z, yaw=dummy_yaw )
 
+def visualize_drone_w_ball(frame, drawing_frame=None):
+    import drone_viz
+    res = de.get_drone_transform_nb(frame, drawing_frame=drawing_frame)
+    ellipse = bd.find_best_ellipse(frame, drawing_frame=drawing_frame)
+    if res is None:
+        return
+    drone_T = res[0]
+    pnp_res:PnpResult = res[1]
+    drone_viz.visualize_drone_pose(drone_T)
+    
+    if ellipse is None:
+        return
+    (cx, cy), (MA, ma), angle = ellipse
+    ball_pos = pnp_res.project_point((cx, cy))
+    drone_viz.visualize_ball_pose(ball_pos)
+
 # Drone control
 dc = DroneController()
 de = DroneEstimator(
@@ -78,36 +96,38 @@ de = DroneEstimator(
         dictionary=cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_250)
     )
 )
+bd = BallDetector()
 
 # Client setup
-start_sim = True
-# drone = SimDrone(start_sim=start_sim)   # Using simulation drone
+start_sim = False
+drone = SimDrone(start_sim=start_sim)   # Using simulation drone
 # drone = TelloDrone()                  # Using drone's hotspot
 # drone = TelloDrone("192.168.137.37")  # Using laptop's hotspot
 
-cap = cv2.VideoCapture("http://192.168.137.86:4747/video")
-drone = Drone(
-    get_frame=lambda: cv2.rotate(cap.read()[1], cv2.ROTATE_90_CLOCKWISE),
-    K = np.array([
-        [487.14566155,   0.,         321.7888109 ],
-        [  0.,         487.60075097, 239.38896134],
-        [  0.,           0.,           1.        ]
-    ], dtype=np.float32),
-    D = np.array([0.33819757, 1.36709606, -6.17042008, 8.65929659], dtype=np.float32)
-)
+# cap = cv2.VideoCapture("http://192.168.137.86:4747/video")
+# drone = Drone(
+#     get_frame=lambda: cv2.rotate(cap.read()[1], cv2.ROTATE_90_CLOCKWISE),
+#     K = np.array([
+#         [487.14566155,   0.,         321.7888109 ],
+#         [  0.,         487.60075097, 239.38896134],
+#         [  0.,           0.,           1.        ]
+#     ], dtype=np.float32),
+#     D = np.array([0.33819757, 1.36709606, -6.17042008, 8.65929659], dtype=np.float32)
+# )
 drone.cam_idx = 1                       # Start with the dorsal camera
 
 # Control modes
 mode = 0
 modes = [
-    {'desc': 'Manual Control', 'func': None, 'image_based': False},
-    {'desc': 'Pose Estimation', 'func': lambda f, df: visualize_drone_pose(f, drawing_frame=df), 'image_based': True},
-    {'desc': 'Match Dummy Pose', 'func': lambda f, df: match_dummy_pose(f, drawing_frame=df), 'image_based': True},
+    {'desc': 'Manual Control', 'func': None},
+    {'desc': 'Pose Estimation', 'func': lambda: visualize_drone_pose(frame, drawing_frame)},
+    {'desc': 'Match Dummy Pose', 'func': lambda: match_dummy_pose(frame, drawing_frame)},
+    {'desc': 'Pose+Ball Estmiation', 'func': lambda: visualize_drone_w_ball(frame, drawing_frame)},
 ]
 
 try:
     while not isinstance(drone, SimDrone) or not start_sim or sim.getSimulationState() != sim.simulation_stopped:
-        start_time = time.time()
+        # start_time = time.time()
         # Get camera image
         if rising_edge('c'):
             drone.cam_idx += 1
@@ -137,7 +157,12 @@ try:
         man_vels = manual_control()
         if mode < len(modes):
             func = modes[mode].get('func', None)
-            func_vels = None if func is None else func(frame, drawing_frame) if modes[mode].get('image_based', False) else func()
+            func_vels = None if func is None else func()
+
+            # Check if func_vels is a tuple of exactly 4 floats
+            if func_vels is not None and (not isinstance(func_vels, tuple) or len(func_vels) != 4 or not all(isinstance(v, float) for v in func_vels)):
+                func_vels = None
+
             func_vels = np.zeros(4) if func_vels is None else func_vels
 
         total_vels = np.add(man_vels, func_vels)
@@ -146,7 +171,7 @@ try:
         drone.send_rc(*total_vels)
 
         show_frame(drawing_frame, 'Drone Camera', scale=0.75)
-        print("execution time:", time.time() - start_time)
+        # print("execution time:", time.time() - start_time)
 finally:
     # Cleanup
     del drone
