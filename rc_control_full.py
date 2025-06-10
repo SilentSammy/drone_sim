@@ -9,7 +9,7 @@ import math
 from input_man import is_pressed, get_axis, rising_edge, is_toggled
 from video import show_frame, screenshot, record
 from drone_est import DroneEstimator, PnpResult
-from drone_control import DroneController
+from drone_control import DroneController, TrajectoryFollower
 from ball_detector import BallDetector
 
 # Manual control (keyboard and controller)
@@ -53,7 +53,11 @@ def match_dummy_pose(frame, drawing_frame=None):
         return None
 
     # Get the drone's estimated position and orientation
-    drone_T, res = de.get_drone_transform_nb(frame, drawing_frame=drawing_frame)
+    result = de.get_drone_transform_nb(frame, drawing_frame=drawing_frame)
+    if result is None:
+        print("Drone pose estimation failed.")
+        return None
+    drone_T, res = result
     dc.feed_pose(drone_T)
 
     # Get the position and orientation of the dummy object
@@ -64,6 +68,32 @@ def match_dummy_pose(frame, drawing_frame=None):
     dummy_yaw = -sim.getObjectOrientation(drone_viz.dummy_drone, -1)[2]  # Yaw is the third element in the orientation tuple
 
     return dc.move_to( x=dummy_x, y=dummy_y, z=dummy_z, yaw=dummy_yaw )
+
+def follow_trajectory(frame, drawing_frame=None):
+    import drone_viz
+    import matrix_help
+    # Static variable to keep the trajectory follower instance
+    tf = follow_trajectory.tf = TrajectoryFollower(auto_advance=True) if not hasattr(follow_trajectory, 'tf') else follow_trajectory.tf
+
+    # Get the drone's estimated position and orientation
+    result = de.get_drone_transform_nb(frame, drawing_frame=drawing_frame)
+    if result is None:
+        print("Drone pose estimation failed.")
+        return None
+    drone_T, res = result
+    
+    # Get the pose of the current waypoint (x, y, z, yaw)
+    waypoint = tf.current_waypoint
+
+    # Visualize the waypoint using the dummy drone
+    waypoint_T = matrix_help.vecs_to_matrix(rvec = (0, 0, waypoint[3]), tvec = waypoint[:3]) 
+    drone_viz.visualize_drone_pose(waypoint_T)
+
+    # Feed the drone's pose to the trajectory follower
+    tf.feed_pose(drone_T)
+    
+    # Get the command velocities from the trajectory follower
+    return tf.move()
 
 def visualize_drone_w_ball(frame, drawing_frame=None):
     import drone_viz
@@ -120,7 +150,7 @@ de = DroneEstimator(
 bd = BallDetector()
 
 # Client setup
-use_sim = False
+use_sim = True
 drone = construct_drone(1)  # Change the index to switch between drones
 drone.cam_idx = 1           # Start with the dorsal camera
 
@@ -130,7 +160,7 @@ modes = [
     {'desc': 'Manual Control', 'func': None},
     {'desc': 'Pose Estimation', 'func': lambda: visualize_drone_pose(frame, drawing_frame)},
     {'desc': 'Match Dummy Pose', 'func': lambda: match_dummy_pose(frame, drawing_frame)},
-    {'desc': 'Pose+Ball Estmiation', 'func': lambda: visualize_drone_w_ball(frame, drawing_frame)},
+    {'desc': 'Follow Trajectory', 'func': lambda: follow_trajectory(frame, drawing_frame)},
 ]
 
 try:
@@ -167,8 +197,12 @@ try:
             func = modes[mode].get('func', None)
             func_vels = None if func is None else func()
 
-            # Check if func_vels is a tuple of exactly 4 floats
-            if func_vels is not None and (not isinstance(func_vels, tuple) or len(func_vels) != 4 or not all(isinstance(v, float) for v in func_vels)):
+            # Check if func_vels is a tuple of exactly 4 numbers (float or int)
+            if func_vels is not None and (
+                not isinstance(func_vels, tuple) or
+                len(func_vels) != 4 or
+                not all(isinstance(v, (float, int, np.floating, np.integer)) for v in func_vels)
+            ):
                 func_vels = None
 
             func_vels = np.zeros(4) if func_vels is None else func_vels
