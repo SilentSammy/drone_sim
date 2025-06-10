@@ -6,10 +6,7 @@ import input_man as im
 import sim_tools as st
 from sim_tools import sim
 import math
-from drone import Drone
-from sim_drone import SimDrone
 from input_man import is_pressed, get_axis, rising_edge, is_toggled
-from tello_drone import TelloDrone
 from video import show_frame, screenshot, record
 from drone_est import DroneEstimator, PnpResult
 from drone_control import DroneController
@@ -56,7 +53,7 @@ def match_dummy_pose(frame, drawing_frame=None):
         return None
 
     # Get the drone's estimated position and orientation
-    drone_T = de.get_drone_transform_nb(frame, drawing_frame=drawing_frame)
+    drone_T, res = de.get_drone_transform_nb(frame, drawing_frame=drawing_frame)
     dc.feed_pose(drone_T)
 
     # Get the position and orientation of the dummy object
@@ -84,6 +81,30 @@ def visualize_drone_w_ball(frame, drawing_frame=None):
     ball_pos = pnp_res.project_point((cx, cy))
     drone_viz.visualize_ball_pose(ball_pos)
 
+def construct_drone(idx):
+    if idx == 0:
+        from drone import Drone
+        cap = cv2.VideoCapture("http://192.168.137.86:4747/video") # Droidcam IP camera
+        drone = Drone(
+            get_frame=lambda: cv2.rotate(cap.read()[1], cv2.ROTATE_90_CLOCKWISE),
+            K = np.array([
+                [487.14566155,   0.,         321.7888109 ],
+                [  0.,         487.60075097, 239.38896134],
+                [  0.,           0.,           1.        ]
+            ], dtype=np.float32),
+            D = np.array([0.33819757, 1.36709606, -6.17042008, 8.65929659], dtype=np.float32)
+        )
+    elif idx == 1:
+        from sim_drone import SimDrone
+        drone = SimDrone(start_sim=use_sim)
+    elif idx == 2:
+        from tello_drone import TelloDrone
+        drone = TelloDrone()                  # Using drone's hotspot
+    elif idx == 3:
+        from tello_drone import TelloDrone
+        drone = TelloDrone("192.168.137.51")  # Using laptop's hotspot
+    return drone
+
 # Drone control
 dc = DroneController()
 de = DroneEstimator(
@@ -99,22 +120,9 @@ de = DroneEstimator(
 bd = BallDetector()
 
 # Client setup
-start_sim = False
-drone = SimDrone(start_sim=start_sim)   # Using simulation drone
-# drone = TelloDrone()                  # Using drone's hotspot
-# drone = TelloDrone("192.168.137.37")  # Using laptop's hotspot
-
-# cap = cv2.VideoCapture("http://192.168.137.86:4747/video")
-# drone = Drone(
-#     get_frame=lambda: cv2.rotate(cap.read()[1], cv2.ROTATE_90_CLOCKWISE),
-#     K = np.array([
-#         [487.14566155,   0.,         321.7888109 ],
-#         [  0.,         487.60075097, 239.38896134],
-#         [  0.,           0.,           1.        ]
-#     ], dtype=np.float32),
-#     D = np.array([0.33819757, 1.36709606, -6.17042008, 8.65929659], dtype=np.float32)
-# )
-drone.cam_idx = 1                       # Start with the dorsal camera
+use_sim = False
+drone = construct_drone(1)  # Change the index to switch between drones
+drone.cam_idx = 1           # Start with the dorsal camera
 
 # Control modes
 mode = 0
@@ -126,7 +134,7 @@ modes = [
 ]
 
 try:
-    while not isinstance(drone, SimDrone) or not start_sim or sim.getSimulationState() != sim.simulation_stopped:
+    while not use_sim or sim.getSimulationState() != sim.simulation_stopped:
         # start_time = time.time()
         # Get camera image
         if rising_edge('c'):
