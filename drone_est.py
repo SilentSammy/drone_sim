@@ -2,8 +2,7 @@ import threading
 import numpy as np
 import cv2
 import math
-import vision
-from matrix_help import ( reverse_xyz_to_zyx_4x4, extract_euler_zyx, Rx, Ry, Rz, vecs_to_matrix )
+from matrix_help import ( reverse_xyz_to_zyx_4x4, extract_euler_zyx, Rx, Ry, Rz, vecs_to_matrix, matrix_to_vecs )
 
 class PnpResult:
     def __init__(self, obj_pts, img_pts, tvec, rvec):
@@ -191,6 +190,10 @@ class DroneEstimator:
         # Display on the drawing frame
         if drawing_frame is not None:
             cv2.aruco.drawDetectedCornersCharuco(drawing_frame, charuco_corners, charuco_ids, cornerColor=(0, 255, 255))
+            rvec, tvec = matrix_to_vecs(cam_T)
+            rvec = [math.degrees(x) for x in rvec]  # Convert radians to degrees
+            cv2.putText(drawing_frame, f"R: {rvec}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
+            cv2.putText(drawing_frame, f"T: {tvec}", (10, 50), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 2)
         
         return cam_T, res
 

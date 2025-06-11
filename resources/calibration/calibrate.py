@@ -21,7 +21,7 @@ objp[0,:,:2] = np.mgrid[0:CHECKERBOARD[0], 0:CHECKERBOARD[1]].T.reshape(-1, 2)
 objp *= square_size
 
 # — LOAD IMAGES & FIND CORNERS —
-images = glob.glob(r'resources\calibration/*.jpg')  # point this at your folder
+images = glob.glob(r'resources\calibration/*.png')  # point this at your folder
 
 for fname in images:
     img = cv2.imread(fname)

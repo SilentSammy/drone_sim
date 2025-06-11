@@ -57,11 +57,11 @@ def construct_drones(idx):
         )
     elif idx == 1:
         from tello_drone import TelloDrone
-        drone1 = TelloDrone("192.168.137.51")  # Using laptop's hotspot
-        drone2 = TelloDrone("192.168.137.52")  # Another Tello drone connected to the same hotspot
+        drone1 = TelloDrone("192.168.137.33")  # Using laptop's hotspot
+        drone2 = TelloDrone("192.168.137.68")  # Another Tello drone connected to the same hotspot
     
-    drone1.cam_idx = 1
-    drone2.cam_idx = 1
+    drone1.change_camera(1)
+    drone2.change_camera(1)
     return drone1, drone2
 
 # Camera estimation setup
@@ -76,25 +76,18 @@ D = np.zeros(5)  # [0, 0, 0, 0, 0]
 
 # Drones setup
 use_sim = True
-drone1, drone2 = construct_drones(0)  # Change the index to switch between drones
+drone1, drone2 = construct_drones(1)  # Change the index to switch between drones
 drones = [
     {
         'drone': drone1, 'name': 'Drone1', 'keybindings': ['w', 's', 'd', 'a', 'z', 'x', 'e', 'q'],
         'de': DroneEstimator(K=np.array([[444, 0, 256], [0, 444, 256], [0, 0, 1]], dtype=np.float32), D=np.zeros(5), board=board),
         'tf': TrajectoryFollower(auto_advance=True, waypoints=[
-            # Start
-            (0, -0.5, 0.72, 0),
-            # Rise to Z=1.5
-            (0, -0.5, 1.5, 0),
-            # Visit corners in counter-clockwise order (start with farthest Y)
-            (-0.4,  1.1, 1.5, 0),   # top-left (farthest from start)
-            ( 0.4,  1.1, 1.5, 0),   # top-right
-            ( 0.4, -1.1, 1.5, 0),   # bottom-right
-            (-0.4, -1.1, 1.5, 0),   # bottom-left (nearest to start)
-            # Return to center at Z=1.5
-            (0, -0.5, 1.5, 0),
-            # Lower to start Z
-            (0, -0.5, 0.72, 0),
+            (0.0, 0.2, 0.5, 0.0), # Start position
+            (0.3, 1.0, 0.5, 0.0), # Move to top right
+            (0.3, -1.0, 0.5, 0.0), # Move to bottom right
+            (-0.3, -1.0, 0.5, 0.0), # Move to bottom left
+            (-0.3, 1.0, 0.5, 0.0), # Move to top left
+            (0.0, 0.2, 0.5, 0.0)  # Return to start position
         ]),
     },
     {
@@ -121,7 +114,7 @@ drones = [
 choreo = Choreographer([drone['tf'] for drone in drones if 'tf' in drone])
 
 try:
-    while not use_sim or sim.getSimulationState() != sim.simulation_stopped:
+    while True:
         # start_time = time.time()
         # Get camera image
         frames = [drone['drone'].get_frame() for drone in drones]
@@ -150,7 +143,7 @@ try:
                 frame = frames[i]
                 de = drone['de']
                 tf = drone.get('tf', None)
-                if tf is not None:
+                if frame is not None and tf is not None:
                     auto_vels = follow_trajectory(frame, de, tf)
                     if auto_vels is not None:
                         rounded_vels = tuple(round(v, 2) for v in auto_vels)
@@ -158,7 +151,8 @@ try:
                         drone['drone'].send_rc(*auto_vels)
 
         for i, frame in enumerate(frames):
-            show_frame(frame, f"{drones[i]['name']} Camera", scale=0.5)
+            if frame is not None:
+                show_frame(frame, f"{drones[i]['name']} Camera", scale=0.5)
 finally:
     # Cleanup
     del drone1

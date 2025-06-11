@@ -9,10 +9,10 @@ class DroneController:
 
         # Initialize PID controllers for x, y, z, and yaw (all setpoints = 0)
         # Tuning gains can be adjusted as needed
-        self.x_pid   = PID(2.5, 0, 0.25, setpoint=0, output_limits=(-1, 1))
-        self.y_pid   = PID(2.5, 0, 0.25, setpoint=0, output_limits=(-1, 1))
-        self.z_pid   = PID(2.5, 0, 0.25, setpoint=0, output_limits=(-1, 1))
-        self.yaw_pid = PID(1.0, 0, 3.5, setpoint=0, output_limits=(-1, 1))
+        self.x_pid   = PID(2.5, 0, 0, setpoint=0, output_limits=(-1, 1))
+        self.y_pid   = PID(2.5, 0, 0, setpoint=0, output_limits=(-1, 1))
+        self.z_pid   = PID(2.5, 0, 0, setpoint=0, output_limits=(-1, 1))
+        self.yaw_pid = PID(2.5, 0, 0, setpoint=0, output_limits=(-1, 1))
 
     def feed_pose(self, drone_T):
         """
@@ -67,7 +67,7 @@ class DroneController:
 
 
 class TrajectoryFollower:
-    def __init__(self, waypoints=None, loop=False, auto_advance=True, position_tolerance=0.1, yaw_tolerance=0.1):
+    def __init__(self, waypoints=None, loop=False, auto_advance=True, position_tolerance=0.2, yaw_tolerance=math.radians(30)):
         self.controller = DroneController()
         self.waypoints = waypoints or default_waypoints
         self.loop = loop
@@ -75,8 +75,12 @@ class TrajectoryFollower:
         self.position_tolerance = position_tolerance
         self.yaw_tolerance = yaw_tolerance
         self.current_idx = 0
-        # Remove self._reached
 
+    @property
+    def done(self):
+        """True if all waypoints have been reached (only if loop is False)."""
+        return (not self.loop) and (self.current_idx >= len(self.waypoints) - 1) and self.reached
+    
     @property
     def reached(self):
         """True if the current waypoint is reached (live check)."""
@@ -93,12 +97,13 @@ class TrajectoryFollower:
         yaw_err = abs(_normalize_angle(yaw - current_yaw))
 
         # Optionally, you may want to cache the last control outputs for stability check
-        ctrl_thresh = 0.05
+        # ctrl_thresh = 0.05
         # Use last control outputs if available, else assume not stable
-        last_ctrls = getattr(self, "_last_ctrls", (float('inf'),)*4)
-        stable = all(abs(val) < ctrl_thresh for val in last_ctrls)
+        # last_ctrls = getattr(self, "_last_ctrls", (float('inf'),)*4)
+        # stable = all(abs(val) < ctrl_thresh for val in last_ctrls)
 
-        return pos_dist < self.position_tolerance and yaw_err < self.yaw_tolerance and stable
+        # return pos_dist < self.position_tolerance and yaw_err < self.yaw_tolerance and stable
+        return pos_dist < self.position_tolerance and yaw_err < self.yaw_tolerance
 
     @property
     def current_waypoint(self):
@@ -115,7 +120,7 @@ class TrajectoryFollower:
         elif self.loop:
             self.current_idx = 0
 
-    def move(self, debug: bool = False):
+    def move(self, debug: bool = True):
         if not self.waypoints:
             print("No waypoints set.")
             return 0.0, 0.0, 0.0, 0.0
@@ -133,8 +138,8 @@ class TrajectoryFollower:
             self.start_next()
 
         return y_ctrl, x_ctrl, z_ctrl, w_ctrl
-    
-  
+
+
 class Choreographer:
     """
     Synchronizes a list of TrajectoryFollowers so that all must reach their current waypoint

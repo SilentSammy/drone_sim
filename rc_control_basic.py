@@ -34,7 +34,7 @@ def flip_control():
     return 'f' if rising_edge('i', 'DPAD_UP') else 'b' if rising_edge('k', 'DPAD_DOWN') else 'l' if rising_edge('j', 'DPAD_LEFT') else 'r' if rising_edge('l', 'DPAD_RIGHT') else None
 
 # drone = SimDrone()                      # Using simulation drone
-# drone = TelloDrone("192.168.137.169")  # Using laptop's hotspot
+# drone = TelloDrone("192.168.137.170")  # Using laptop's hotspot
 drone = TelloDrone()                  # Using drone's hotspot
 try:
     cam_idx = 0

@@ -7,9 +7,9 @@ class TelloDrone(Drone):
         super().__init__()
         
         # Magnitudes for tello drone control
-        self.transl_mag = 100
-        self.thr_mag = 100
-        self.yaw_mag = 100
+        self.transl_mag = 15
+        self.thr_mag = 15
+        self.yaw_mag = 15
 
         # Initialize Tello drone
         self.tello = Tello(host=ip) if ip else Tello()
@@ -20,14 +20,22 @@ class TelloDrone(Drone):
         self.flight = False
 
         # Query battery
-        bat = self.tello.query_battery()
-        print("Battery:", bat)
+        # bat = self.tello.query_battery()
+        # print("Battery:", bat)
+
+        self.cam_idx = 0  # Camera index, 0 for forward camera, 1 for downward camera
 
     # MANDATORY METHODS
     def get_frame(self):
-        frame = self.tello.get_frame_read().frame
-        frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
-        return frame_rgb
+        try:
+            frame = self.tello.get_frame_read().frame
+            frame_rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+            if self.cam_idx % 2 != 0:
+                frame_rgb = cv2.rotate(frame_rgb, cv2.ROTATE_90_CLOCKWISE)
+            return frame_rgb
+        except Exception as e:
+            print(f"Error getting frame: {e}")
+            return None
 
     def _apply_rc(self, x, y, z, w):
         # Convert to right-handed coordinate system
@@ -45,6 +53,7 @@ class TelloDrone(Drone):
     
     # OPTIONAL METHODS
     def change_camera(self, cam_idx):
+        self.cam_idx = cam_idx
         if cam_idx % 2 == 0:
             self.tello.set_video_direction(Tello.CAMERA_FORWARD)
         else:

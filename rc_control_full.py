@@ -41,7 +41,7 @@ def flip_control():
 
 def visualize_drone_pose(frame, drawing_frame=None):
     import drone_viz
-    res = de.get_drone_transform_nb(frame, drawing_frame=drawing_frame)
+    res = de.get_drone_transform(frame, drawing_frame=drawing_frame)
     if res is None:
         return
     drone_T, _ = res
@@ -53,7 +53,7 @@ def match_dummy_pose(frame, drawing_frame=None):
         return None
 
     # Get the drone's estimated position and orientation
-    result = de.get_drone_transform_nb(frame, drawing_frame=drawing_frame)
+    result = de.get_drone_transform(frame, drawing_frame=drawing_frame)
     if result is None:
         print("Drone pose estimation failed.")
         return None
@@ -73,10 +73,23 @@ def follow_trajectory(frame, drawing_frame=None):
     import drone_viz
     import matrix_help
     # Static variable to keep the trajectory follower instance
-    tf = follow_trajectory.tf = TrajectoryFollower(auto_advance=True) if not hasattr(follow_trajectory, 'tf') else follow_trajectory.tf
+    # Define a "figure eight" trajectory within the bounds
+    waypoints = [
+        (0.0, 0.2, 0.5, 0.0),    # Start position (center top)
+        (0.25, 0.8, 0.5, math.pi/4),   # Top right loop
+        (0.0, 0.0, 0.5, math.pi),      # Cross to center
+        (-0.25, -0.8, 0.5, -math.pi/4),# Bottom left loop
+        (0.0, 0.2, 0.5, 0.0),          # Return to start
+        (0.3, -1.0, 0.5, math.pi/2)    # Far bottom right for a flourish
+    ]
+
+    tf = follow_trajectory.tf = TrajectoryFollower(auto_advance=True, waypoints=waypoints) if not hasattr(follow_trajectory, 'tf') else follow_trajectory.tf
+
+    if tf.done:
+        drone.land()
 
     # Get the drone's estimated position and orientation
-    result = de.get_drone_transform_nb(frame, drawing_frame=drawing_frame)
+    result = de.get_drone_transform(frame, drawing_frame=drawing_frame)
     if result is None:
         print("Drone pose estimation failed.")
         return None
@@ -87,7 +100,7 @@ def follow_trajectory(frame, drawing_frame=None):
 
     # Visualize the waypoint using the dummy drone
     waypoint_T = matrix_help.vecs_to_matrix(rvec = (0, 0, waypoint[3]), tvec = waypoint[:3]) 
-    # drone_viz.visualize_drone_pose(waypoint_T)
+    drone_viz.visualize_drone_pose(waypoint_T)
 
     # Feed the drone's pose to the trajectory follower
     tf.feed_pose(drone_T)
@@ -116,12 +129,27 @@ def construct_drone(idx):
         drone = TelloDrone()                  # Using drone's hotspot
     elif idx == 3:
         from tello_drone import TelloDrone
-        drone = TelloDrone("192.168.137.51")  # Using laptop's hotspot
+        drone = TelloDrone("192.168.137.14")  # Using laptop's hotspot
     return drone
 
 # Drone control
 dc = DroneController()
 de = DroneEstimator(
+    K = np.array([
+        [226.88179248,   0.,         160.67144106],
+        [  0.,         227.22020997, 117.68560542],
+        [  0.,           0.,           1.        ]
+    ], dtype=np.float32),
+    D = np.zeros(5),  # [0, 0, 0, 0, 0]
+    board = cv2.aruco.CharucoBoard(
+        size=(9, 24),
+        squareLength=0.1,
+        markerLength=0.08,
+        dictionary=cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_250)
+    )
+)
+
+de1 = DroneEstimator(
     K = np.array([[444,   0, 256], [  0, 444, 256], [  0,   0,   1]], dtype=np.float32),
     D = np.zeros(5),  # [0, 0, 0, 0, 0]
     board = cv2.aruco.CharucoBoard(
@@ -131,12 +159,11 @@ de = DroneEstimator(
         dictionary=cv2.aruco.getPredefinedDictionary(cv2.aruco.DICT_4X4_250)
     )
 )
-bd = BallDetector()
 
 # Client setup
 use_sim = True
-drone = construct_drone(1)  # Change the index to switch between drones
-drone.cam_idx = 1           # Start with the dorsal camera
+drone = construct_drone(3)  # Change the index to switch between drones
+drone.cam_idx = 0           # Start with the dorsal camera
 
 # Control modes
 mode = 0
@@ -148,11 +175,12 @@ modes = [
 ]
 
 try:
-    while not use_sim or sim.getSimulationState() != sim.simulation_stopped:
-        # start_time = time.time()
+    cam_idx = 0
+    while True:
         # Get camera image
         if rising_edge('c'):
-            drone.cam_idx += 1
+            cam_idx = cam_idx + 1
+            drone.change_camera(cam_idx)
         frame = drone.get_frame()
         drawing_frame = frame.copy()
 
