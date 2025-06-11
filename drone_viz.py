@@ -5,8 +5,7 @@ from drone_est import DroneEstimator
 def visualize_drone_pose(drone_T):
     if dummy_drone is None or drone_T is None:
         return
-    T_coppelia = st.np_to_coppelia_T(drone_T)
-    sim.setObjectMatrix(dummy_drone, T_coppelia, sim.handle_world)
+    st.set_matrix(dummy_drone, drone_T)
 
 def visualize_ball_pose(ball_pos_xy):
     if dummy_ball is None or ball_pos_xy is None:

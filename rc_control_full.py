@@ -87,29 +87,13 @@ def follow_trajectory(frame, drawing_frame=None):
 
     # Visualize the waypoint using the dummy drone
     waypoint_T = matrix_help.vecs_to_matrix(rvec = (0, 0, waypoint[3]), tvec = waypoint[:3]) 
-    drone_viz.visualize_drone_pose(waypoint_T)
+    # drone_viz.visualize_drone_pose(waypoint_T)
 
     # Feed the drone's pose to the trajectory follower
     tf.feed_pose(drone_T)
     
     # Get the command velocities from the trajectory follower
     return tf.move()
-
-def visualize_drone_w_ball(frame, drawing_frame=None):
-    import drone_viz
-    res = de.get_drone_transform_nb(frame, drawing_frame=drawing_frame)
-    ellipse = bd.find_best_ellipse(frame, drawing_frame=drawing_frame)
-    if res is None:
-        return
-    drone_T = res[0]
-    pnp_res:PnpResult = res[1]
-    drone_viz.visualize_drone_pose(drone_T)
-    
-    if ellipse is None:
-        return
-    (cx, cy), (MA, ma), angle = ellipse
-    ball_pos = pnp_res.project_point((cx, cy))
-    drone_viz.visualize_ball_pose(ball_pos)
 
 def construct_drone(idx):
     if idx == 0:

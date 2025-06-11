@@ -12,7 +12,7 @@ class DroneController:
         self.x_pid   = PID(2.5, 0, 0.25, setpoint=0, output_limits=(-1, 1))
         self.y_pid   = PID(2.5, 0, 0.25, setpoint=0, output_limits=(-1, 1))
         self.z_pid   = PID(2.5, 0, 0.25, setpoint=0, output_limits=(-1, 1))
-        self.yaw_pid = PID(10.0, 0, 4.0, setpoint=0, output_limits=(-0.5, 0.5))
+        self.yaw_pid = PID(1.0, 0, 3.5, setpoint=0, output_limits=(-1, 1))
 
     def feed_pose(self, drone_T):
         """
@@ -65,15 +65,9 @@ class DroneController:
 
         return y_control, x_control, z_control, w_control
 
+
 class TrajectoryFollower:
     def __init__(self, waypoints=None, loop=False, auto_advance=True, position_tolerance=0.1, yaw_tolerance=0.1):
-        """
-        waypoints: list of (x, y, z, yaw) tuples
-        loop: whether to loop the sequence
-        auto_advance: whether to move to next waypoint automatically
-        position_tolerance: meters, for considering a waypoint reached
-        yaw_tolerance: radians, for considering a waypoint reached
-        """
         self.controller = DroneController()
         self.waypoints = waypoints or default_waypoints
         self.loop = loop
@@ -81,34 +75,47 @@ class TrajectoryFollower:
         self.position_tolerance = position_tolerance
         self.yaw_tolerance = yaw_tolerance
         self.current_idx = 0
-        self._reached = False
+        # Remove self._reached
 
     @property
     def reached(self):
-        """True if the current waypoint is reached."""
-        return self._reached
+        """True if the current waypoint is reached (live check)."""
+        if not self.waypoints or self.controller.drone_T is None:
+            return False
+
+        x, y, z, yaw = self.waypoints[self.current_idx]
+        d_rvec, d_tvec = self.controller.drone_T[:3, :3], self.controller.drone_T[:3, 3]
+        pos_dist = math.sqrt((x - d_tvec[0])**2 + (y - d_tvec[1])**2 + (z - d_tvec[2])**2)
+        try:
+            current_yaw = math.atan2(d_rvec[1,0], d_rvec[0,0])
+        except Exception:
+            current_yaw = 0.0
+        yaw_err = abs(_normalize_angle(yaw - current_yaw))
+
+        # Optionally, you may want to cache the last control outputs for stability check
+        ctrl_thresh = 0.05
+        # Use last control outputs if available, else assume not stable
+        last_ctrls = getattr(self, "_last_ctrls", (float('inf'),)*4)
+        stable = all(abs(val) < ctrl_thresh for val in last_ctrls)
+
+        return pos_dist < self.position_tolerance and yaw_err < self.yaw_tolerance and stable
 
     @property
     def current_waypoint(self):
-        """Get the current waypoint as a (x, y, z, yaw) tuple."""
         if self.current_idx < len(self.waypoints):
             return self.waypoints[self.current_idx]
         return None
 
     def feed_pose(self, drone_T):
-        """Feed the current drone pose to the controller."""
         self.controller.feed_pose(drone_T)
 
     def start_next(self):
-        """Advance to the next waypoint (manual mode)."""
         if self.current_idx < len(self.waypoints) - 1:
             self.current_idx += 1
         elif self.loop:
             self.current_idx = 0
-        self._reached = False
 
     def move(self, debug: bool = False):
-        """Get command velocities for the current waypoint, with debug prints and stability check."""
         if not self.waypoints:
             print("No waypoints set.")
             return 0.0, 0.0, 0.0, 0.0
@@ -116,44 +123,43 @@ class TrajectoryFollower:
         x, y, z, yaw = self.waypoints[self.current_idx]
         y_ctrl, x_ctrl, z_ctrl, w_ctrl = self.controller.move_to(x, y, z, yaw, debug=debug)
 
-        # Check if reached and stable
-        pose = self.controller.drone_T
-        if pose is not None:
-            d_rvec, d_tvec = self.controller.drone_T[:3, :3], self.controller.drone_T[:3, 3]
-            pos_dist = math.sqrt((x - d_tvec[0])**2 + (y - d_tvec[1])**2 + (z - d_tvec[2])**2)
-            try:
-                current_yaw = math.atan2(d_rvec[1,0], d_rvec[0,0])
-            except Exception:
-                current_yaw = 0.0
-            yaw_err = abs(_normalize_angle(yaw - current_yaw))
+        # Cache last control outputs for stability check in reached property
+        self._last_ctrls = (y_ctrl, x_ctrl, z_ctrl, w_ctrl)
 
-            # Control stability check
-            ctrl_thresh = 0.05
-            stable = all(abs(val) < ctrl_thresh for val in (y_ctrl, x_ctrl, z_ctrl, w_ctrl))
-
+        # Auto-advance if reached
+        if self.reached and self.auto_advance:
             if debug:
-                print(f"\n--- TrajectoryFollower Debug ---")
-                print(f"Current waypoint index: {self.current_idx}")
-                print(f"Target waypoint: x={x}, y={y}, z={z}, yaw={yaw:.2f}")
-                print(f"Current position: x={d_tvec[0]:.2f}, y={d_tvec[1]:.2f}, z={d_tvec[2]:.2f}")
-                print(f"Distance to waypoint: {pos_dist:.3f} (tolerance: {self.position_tolerance})")
-                print(f"Current yaw: {current_yaw:.2f}, Target yaw: {yaw:.2f}, Yaw error: {yaw_err:.3f} (tolerance: {self.yaw_tolerance})")
-                print(f"Control outputs: y_ctrl={y_ctrl:.3f}, x_ctrl={x_ctrl:.3f}, z_ctrl={z_ctrl:.3f}, w_ctrl={w_ctrl:.3f}")
-                print(f"Stability: {stable} (threshold: {ctrl_thresh})")
-                print(f"Reached: {self._reached}, Auto-advance: {self.auto_advance}")
-                print(f"--------------------------------\n")
-
-            self._reached = (
-                pos_dist < self.position_tolerance and
-                yaw_err < self.yaw_tolerance and
-                stable
-            )
-            if self._reached and self.auto_advance:
-                if debug:
-                    print("Waypoint reached and stable. Advancing to next waypoint...")
-                self.start_next()
+                print("Waypoint reached and stable. Advancing to next waypoint...")
+            self.start_next()
 
         return y_ctrl, x_ctrl, z_ctrl, w_ctrl
+    
+  
+class Choreographer:
+    """
+    Synchronizes a list of TrajectoryFollowers so that all must reach their current waypoint
+    before any are allowed to advance to the next.
+    """
+    def __init__(self, followers):
+        """
+        followers: list of TrajectoryFollower instances
+        """
+        self.followers = followers
+
+        # Disable auto-advance for all followers
+        for f in self.followers:
+            f.auto_advance = False
+
+    def check(self):
+        """
+        Call this in your main loop. If all followers have reached their current waypoint,
+        advances all to the next waypoint.
+        """
+        if all(f.reached for f in self.followers):
+            print("All followers reached their current waypoint. Advancing to next waypoint...")
+            for f in self.followers:
+                f.start_next()
+
 
 def _normalize_angle(angle: float) -> float:
     """

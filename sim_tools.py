@@ -53,6 +53,13 @@ def rotate_object(object_handle, alpha=0, beta=0, gamma=0):
     orientation = sim.getObjectOrientation(object_handle, -1)
     sim.setObjectOrientation(object_handle, -1, [orientation[0] + alpha, orientation[1] + beta, orientation[2] + gamma])
 
+def set_matrix(object_handle, object_T):
+    T_coppelia = np_to_coppelia_T(object_T)
+    sim.setObjectMatrix(object_handle, T_coppelia, sim.handle_world)
+
+def set_matrix_local(object_handle, parent_handle, object_T):
+    sim.setObjectMatrix(object_handle, parent_handle, np_to_coppelia_T(object_T))
+
 def np_to_coppelia_T(T):
     # T is a 4x4 numpy array
     # CoppeliaSim expects columns of the rotation matrix and the translation vector
